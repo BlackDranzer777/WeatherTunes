@@ -4,14 +4,18 @@ require('dotenv').config();
 // Import the necessary modules.
 const express = require('express');
 const SpotifyWebApi = require('spotify-web-api-node');
-
+const cors = require('cors');
+const bodyParser = require('body-parser');
 // Initialize an Express application.
 const app = express();
+app.use(cors());
+app.use(bodyParser.json());
+
+
 // Define the port number on which the server will listen.
 const port = 3050;
 
 let users = []
-
 // Initialize the Spotify API with credentials from environment variables.
 const spotifyApi = new SpotifyWebApi({
     clientId: process.env.CLIENT_ID,
@@ -19,13 +23,15 @@ const spotifyApi = new SpotifyWebApi({
     redirectUri: process.env.REDIRECT_URL
 });
 
-// Route handler for the login endpoint.
+
+
 app.get('/login', (req, res) => {
     // Define the scopes for authorization; these are the permissions we ask from the user.
-    const scopes = ['user-read-private', 'user-read-email', 'user-read-playback-state', 'user-modify-playback-state'];
+    const scopes = ['user-read-private', 'user-read-email', 'user-read-playback-state', 'user-modify-playback-state', 'playlist-modify-public', 'playlist-modify-private', 'user-library-modify'];
     // Redirect the client to Spotify's authorization page with the defined scopes.
     res.redirect(spotifyApi.createAuthorizeURL(scopes));
 });
+
 
 // Route handler for the callback endpoint after the user has logged in.
 app.get('/callback', (req, res) => {
@@ -111,6 +117,7 @@ app.get('/me', (req, res) => {
     // Get the authenticated user
     spotifyApi.getMe()
         .then(function(data) {
+            res.json(data)
             console.log('Some information about the authenticated user', data.body);
         }, function(err) {
             console.log('Something went wrong!', err);
@@ -118,34 +125,61 @@ app.get('/me', (req, res) => {
 });
 
 
+
+//GET the current playing tracks
+app.get('/tracks', (req, res) => {
+    spotifyApi.getMyCurrentPlayingTrack()
+      .then(function(data) {
+        res.json(data)
+        console.log('Now playing: ' + data.body.item.name);
+      }, function(err) {
+        console.log('Something went wrong!', err);
+      });
+});
+
+
 // Get Recommendations Based on Seeds
 
 app.get('/recommendations', (req, res) => {
+    const { track } = req.query;
+    
     //getRecommendations
     spotifyApi.getRecommendations({
+        limit: 2,
         min_energy: 0.4,
-        seed_artists: ['6mfK6Q2tzLMEchAr0e9Uzu', '4DYFVNKZ1uixa6SQTvzQwJ'],
+        // seed_artists: ['6mfK6Q2tzLMEchAr0e9Uzu', '4DYFVNKZ1uixa6SQTvzQwJ'],
+        seed_tracks: [track],
         min_popularity: 50
       })
     .then(function(data) {
-      let recommendations = data.body;
-      console.log(recommendations);
+      let recommendations = data.body.tracks;
+      trackIds = recommendations.map(track => track.id);
+      res.json(trackIds)
+      spotifyApi.addToMySavedTracks(trackIds)
+        .then(function(data) {
+        console.log('Added track!');
+        }, function(err) {
+            console.log('Something went wrong!', err);
+        });
+    // res.json(recommendations)
+            console.log(trackIds);
+    // console.log(recommendations)
     }, function(err) {
       console.log("Something went wrong!", err);
     });
+    
 });
 
-
-
-
-app.get('/tracks', (req, res) => {
-spotifyApi.getMyCurrentPlayingTrack()
-  .then(function(data) {
-    console.log('Now playing: ' + data.body.item.name);
-  }, function(err) {
-    console.log('Something went wrong!', err);
-  });
+app.post('/create', (req, res) => {
+    
+    spotifyApi.createPlaylist('My Test playlist', { 'description': 'My description', 'public': true })
+    .then(function(data) {
+        console.log('Created playlist!');
+    }, function(err) {
+        console.log('Something went wrong!', err);
+    });
 });
+
 
 
 // Start the Express server.
