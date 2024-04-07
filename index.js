@@ -6,6 +6,8 @@ const express = require('express');
 const SpotifyWebApi = require('spotify-web-api-node');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const OpenAI = require("openai");
+const fetch = require('node-fetch');
 // Initialize an Express application.
 const app = express();
 app.use(cors());
@@ -23,11 +25,42 @@ const spotifyApi = new SpotifyWebApi({
     redirectUri: process.env.REDIRECT_URL
 });
 
+const openai = new OpenAI({
+    apiKey: process.env.OPEN_AI_SECRET // This is also the default, can be omitted
+});
+
+
+async function imageUrlToBase64(url) {
+    try {
+      // Fetch the image from the URL
+      const response = await fetch(url);
+      const imageData = await response.buffer();
+  
+      // Convert the image data to a Base64-encoded JPEG string
+      const base64Image = imageData.toString('base64');
+  
+      // Return the Base64-encoded image data
+      return base64Image;
+    } catch (error) {
+      console.error('Error converting image URL to Base64:', error);
+      throw error;
+    }
+  }
+
 
 
 app.get('/login', (req, res) => {
     // Define the scopes for authorization; these are the permissions we ask from the user.
-    const scopes = ['user-read-private', 'user-read-email', 'user-read-playback-state', 'user-modify-playback-state', 'playlist-modify-public', 'playlist-modify-private', 'user-library-modify'];
+    const scopes = [
+        'user-read-private', 
+        'user-read-email', 
+        'user-read-playback-state', 
+        'user-modify-playback-state', 
+        'playlist-modify-public', 
+        'playlist-modify-private', 
+        'user-library-modify',
+        'ugc-image-upload'
+        ];
     // Redirect the client to Spotify's authorization page with the defined scopes.
     res.redirect(spotifyApi.createAuthorizeURL(scopes));
 });
@@ -171,13 +204,48 @@ app.get('/recommendations', (req, res) => {
 });
 
 app.post('/create', (req, res) => {
+
+    const uri = `https://i.pinimg.com/564x/31/2b/81/312b81ad6a3cd4e94e3d2d2ae94866aa.jpg`
     
-    spotifyApi.createPlaylist('My Test playlist', { 'description': 'My description', 'public': true })
-    .then(function(data) {
-        console.log('Created playlist!');
-    }, function(err) {
-        console.log('Something went wrong!', err);
+    // const image = await openai.images.generate({ model: "dall-e-3", prompt: "A cute baby sea otter" });
+
+    //Main API
+    openai.images.generate({ model: "dall-e-3", prompt: "A cute baby sea otter" })
+    .then(function(image){
+        console.log("IMAGE : ", image.data);
+        spotifyApi.createPlaylist('My Test playlist', { 'description': 'My description', 'public': true })
+        .then(function(data) {
+                console.log('Created playlist!');
+
+                imageUrlToBase64(uri)
+                .then(base64Image => {
+                    console.log('Image has been Base64-encoded');
+        
+                    //add cover to image
+                    spotifyApi.uploadCustomPlaylistCoverImage(data.body.id,base64Image)
+                    .then(function(data) {
+                        console.log('Playlsit cover image uploaded!');
+                    }, function(err) {
+                        console.log('Something went wrong!', err);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+
+            //create playlist cover after creating playlist
+            spotifyApi.uploadCustomPlaylistCoverImage('5ieJqeLJjjI8iJWaxeBLuK',uri)
+            .then(function(data) {
+                console.log('Playlsit cover image uploaded!');
+            }, function(err) {
+                console.log('Something went wrong!', err);
+            });
+        }, function(err) {
+            console.log('Something went wrong!', err);
+        })
     });
+
+
 });
 
 
